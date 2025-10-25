@@ -3,9 +3,9 @@ import { BotserviceService } from './botservice.service';
 
 @Controller('botservice')
 export class BotserviceController {
-  constructor(private readonly botserviceService: BotserviceService) {}
+  constructor(private readonly botserviceService: BotserviceService) { }
   @Post('send')
-async send(@Body() body) {
-  return this.botserviceService.sendOrderToChats(body);
-}
+  async send(@Body() body) {
+    return this.botserviceService.sendOrderToChats(body);
+  }
 }
