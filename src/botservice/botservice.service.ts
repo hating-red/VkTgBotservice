@@ -112,6 +112,7 @@ export class BotserviceService {
 
             try {
               console.log(backendUrl);
+              this.logger.log(`📡 Отправка запроса на ${backendUrl}/order/create-from-bot`);
               const response = await axios.post(`${backendUrl}/order/create-from-bot`, { order });
               if (response.data?.success) {
                 this.logger.log(`✅ Order ${orderId} успешно добавлен в базу`);
