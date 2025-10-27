@@ -101,7 +101,7 @@ export class BotserviceService {
             const parts = data.split('_');
             const source = parts[1];
             const orderId = parts[2];
-            const backendUrl = process.env.MAIN_BACKEND_URL || 'http://localhost:3037';
+            const backendUrl = process.env.MAIN_BACKEND_URL;
 
             const order = this.pendingEdits?.[orderId];
             if (!order) {
@@ -111,6 +111,7 @@ export class BotserviceService {
             }
 
             try {
+              console.log(backendUrl);
               const response = await axios.post(`${backendUrl}/order/create-from-bot`, { order });
               if (response.data?.success) {
                 this.logger.log(`✅ Order ${orderId} успешно добавлен в базу`);
