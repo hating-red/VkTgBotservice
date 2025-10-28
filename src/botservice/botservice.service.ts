@@ -111,21 +111,36 @@ export class BotserviceService {
             }
 
             try {
-              console.log(backendUrl);
-              this.logger.log(`📡 Отправка запроса на ${backendUrl}/order/create-from-bot`);
+              this.logger.log(`📡 Попытка отправки запроса на ${backendUrl}/order/create-from-bot`);
+              this.logger.debug(`📦 Тело запроса: ${JSON.stringify({ order })}`);
+
               const response = await axios.post(`${backendUrl}/order/create-from-bot`, { order });
+
+              this.logger.debug(`📬 Ответ от бэкенда: ${JSON.stringify(response.data)}`);
+              this.logger.log(`📨 Код ответа: ${response.status}`);
+
               if (response.data?.success) {
                 this.logger.log(`✅ Order ${orderId} успешно добавлен в базу`);
                 await ctx.editMessageText(`${msg.text}\n\n✅ Одобрено модератором`, { parse_mode: 'HTML' });
                 await ctx.answerCbQuery('✅ Заказ успешно добавлен в базу');
               } else {
-                throw new Error(response.data?.error || 'Неизвестная ошибка при добавлении заказа');
+                const backendError = response.data?.error || 'Неизвестная ошибка при добавлении заказа';
+                this.logger.error(`⚠️ Бэкенд вернул ошибку: ${backendError}`);
+                throw new Error(backendError);
               }
+
             } catch (err) {
-              this.logger.error(`❌ Ошибка при добавлении Order ${orderId} в базу`, err as Error);
+              const message = err instanceof Error ? err.message : String(err);
+              const stack = err instanceof Error ? err.stack : null;
+
+              this.logger.error(`❌ Ошибка при добавлении Order ${orderId} в базу`);
+              this.logger.error(`Сообщение: ${message}`);
+              if (stack) this.logger.error(`Стек:\n${stack}`);
+
+              console.error('Ошибка при запросе к бэкенду:', err);
+
               await ctx.answerCbQuery('❌ Ошибка при добавлении заказа в базу');
             }
-
             delete this.pendingEdits?.[orderId];
           }
         } catch (err) {
@@ -137,7 +152,7 @@ export class BotserviceService {
 
     this.listenForIncomingMessages();
   }
-  
+
   //ФУНКЦИЯ ПРОСЛУШКИ СООБЩЕНИЙ
   private async listenForIncomingMessages() {
     const gigaKey = process.env.GIGACHAT_API_KEY;
