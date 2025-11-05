@@ -394,7 +394,9 @@ export class BotserviceService {
     const cleanDescription = (order.description || '')
       .replace(/<p[^>]*>/g, '')
       .replace(/<\/p>/g, '\n')
+      .replace(/<br\s*\/?>/gi, '\n') // сохраняем переносы строк из <br>
       .replace(/<[^>]+>/g, '')
+      .replace(/\n\s*\n/g, '\n\n') // убираем лишние пустые строки
       .trim();
 
     const dateText =
@@ -480,9 +482,14 @@ ${cleanDescription || 'Описание не указано'}
     if (this.vk && this.vkChatIds.length > 0) {
       for (const chatId of this.vkChatIds) {
         try {
-          let vkMessage =
-            message.replace(/<[^>]+>/g, '') +
-            `\n\n🌐 Сайт: https://nirby.ru`;
+          // Для VK сохраняем переносы строк, но убираем HTML теги
+          let vkMessage = message
+            .replace(/<b>/g, '') // убираем теги жирного текста
+            .replace(/<\/b>/g, '')
+            .replace(/\n{3,}/g, '\n\n') // ограничиваем множественные переносы
+            .trim();
+
+          vkMessage += `\n\n🌐 Сайт: https://nirby.ru`;
 
           if (mapUrl) {
             vkMessage += `\n📍 Карта: ${mapUrl}`;
