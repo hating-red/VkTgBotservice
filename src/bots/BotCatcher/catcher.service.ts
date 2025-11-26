@@ -61,9 +61,22 @@ export class CatcherService {
 
       const orderId = generateOrderId();
       this.logger.log(`channel_post: new post, generated orderId=${orderId}. Starting parser...`);
+
       try {
         const gigaKey = process.env.GIGACHAT_API_KEY;
-        const parsedOrder = await parseOrderWithGigaChat(text, gigaKey!);
+
+        // --- Очистка текста от служебных сообщений ---
+        let cleanText = text;
+
+        const match = text.match(/📨 <b>Новое объявление \(оригинал\)<\/b>\n([\s\S]*?📦 Источник:.*)/);
+        if (match && match[1]) {
+          cleanText = match[1].trim();
+          this.logger.log(`[CatcherService] channel_post: extracted clean text for parsing`);
+        } else {
+          this.logger.warn(`[CatcherService] channel_post: unable to extract clean text, using full post`);
+        }
+
+        const parsedOrder = await parseOrderWithGigaChat(cleanText, gigaKey!);
 
         parsedOrder.isEditing = false;
         this.pendingEdits[orderId] = parsedOrder;
@@ -175,7 +188,7 @@ export class CatcherService {
     if (!this.tgBot || !this.modChatId) return;
 
     const msg = `
-🧤 <b>Кэтчер ловит мяч!</b>
+🧤🧤🧤🧤🧤🧤🧤🧤🧤🧤
 
 <b>✨ Новое объявление!</b>
 <b>${order.title}</b>
@@ -190,7 +203,7 @@ export class CatcherService {
 
 👤 Отправитель: ${user.username || user.first_name || 'неизвестно'}
 
-🧤 <b>Кэтчер ловит мяч!</b>
+🧤🧤🧤🧤🧤🧤🧤🧤🧤🧤
 `;
 
     await this.tgBot.telegram.sendMessage(this.modChatId, msg, {
