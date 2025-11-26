@@ -35,33 +35,46 @@ export class CatcherService {
 
     this.tgBot.on('channel_post', async (ctx) => {
       const post = ctx.channelPost;
-
-      // Проверяем, что это текстовый пост
-      if (!post || !('text' in post)) return;
-
-      const text = post.text;
+      const text = (post as any)?.text;
       if (!text) return;
 
       const user = { username: 'PitcherBot', first_name: 'Pitcher' };
-      const orderId = generateOrderId();
+
+      let isEditedJSON = false;
+      let order: any;
 
       try {
+        order = JSON.parse(text);
+        if (order?.orderId) {
+          isEditedJSON = true;
+          this.logger.log(`[CatcherService] channel_post: received edited JSON for orderId=${order.orderId}`);
+        }
+      } catch {
+      }
+
+      if (isEditedJSON) {
+        this.pendingEdits[order.orderId] = order;
+        await this.sendToModeratorWithButtons(order.orderId, order, user);
+        this.logger.log(`[CatcherService] channel_post: resent edited orderId=${order.orderId} with buttons`);
+        return;
+      }
+
+      const orderId = generateOrderId();
+      this.logger.log(`channel_post: new post, generated orderId=${orderId}. Starting parser...`);
+      try {
         const gigaKey = process.env.GIGACHAT_API_KEY;
-        const order = await parseOrderWithGigaChat(text, gigaKey!);
+        const parsedOrder = await parseOrderWithGigaChat(text, gigaKey!);
 
-        this.pendingEdits[orderId] = order;
+        parsedOrder.isEditing = false;
+        this.pendingEdits[orderId] = parsedOrder;
 
-        await this.sendToModeratorWithButtons(orderId, order, user);
-
+        await this.sendToModeratorWithButtons(orderId, parsedOrder, user);
+        this.logger.log(`channel_post: sent parsed orderId=${orderId} to moderator with buttons`);
       } catch (err) {
-        this.logger.error('❌ Ошибка парсинга заказа', err);
+        this.logger.error('❌ Ошибка парсинга заказа в channel_post', err as Error);
       }
     });
 
-
-
-
-    // Обработка callback кнопок
     this.tgBot.on('callback_query', async (ctx) => {
       const callback = ctx.callbackQuery as any;
       const data = callback?.data as string;
@@ -80,6 +93,15 @@ export class CatcherService {
             this.logger.warn(`⚠️ Не найден заказ для orderId=${orderId}`);
             await ctx.answerCbQuery('⚠️ Данные заказа не найдены');
             return;
+          }
+
+          const requiredFields = ['title', 'paymentType', 'budget', 'date', 'startTime'];
+          for (const field of requiredFields) {
+            if (!order[field]) {
+              this.logger.error(`❌ Order ${orderId} missing required field: ${field}`);
+              await ctx.answerCbQuery(`⚠️ Order неполный. Поле ${field} обязательно`);
+              return;
+            }
           }
 
           try {
@@ -114,10 +136,30 @@ export class CatcherService {
         // --- РЕДАКТИРОВАНИЕ ---
         if (data.startsWith('edit_')) {
           const orderId = data.split('_')[1];
-          this.pendingEdits[orderId].awaitingEdit = true;
-          await ctx.reply('✏️ Кикер меняет траекторию мяча (Скопируйте текст выше, внесите правки и отправьте заново.)');
-          await ctx.answerCbQuery('✏️ Переброс');
+          const entry = this.pendingEdits?.[orderId];
+
+          if (!entry) {
+            this.logger.warn(`callback_query: edit requested but pendingEdits[${orderId}] not found`);
+            await ctx.answerCbQuery('⚠️ Данные заказа не найдены');
+            return;
+          }
+
+          const editableJSON = {
+            ...entry,
+            orderId,
+          };
+
+          await ctx.reply(
+            '✏️ Кикер меняет траекторию мяча.\nСкопируйте JSON ниже, внесите правки и отправьте обратно в канал:',
+            { parse_mode: 'Markdown' }
+          );
+          await ctx.reply('```json\n' + JSON.stringify(editableJSON, null, 2) + '\n```', { parse_mode: 'Markdown' });
+
+          delete this.pendingEdits[orderId];
+          this.logger.log(`callback_query: orderId=${orderId} sent as editable JSON to moderator`);
         }
+
+
 
       } catch (err) {
         this.logger.error('❌ Ошибка при обработке callback_query', err as Error);
