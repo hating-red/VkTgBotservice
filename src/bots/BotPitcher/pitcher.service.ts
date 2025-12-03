@@ -37,16 +37,20 @@ export class PitcherService {
 
     // === Telegram listener ===
     this.tgBot.on('text', async (ctx) => {
-      // Игнорируем посты, если они уже идут из канала (чтобы не зацикливать)
       if (ctx.chat.id === Number(this.draftChannelId)) return;
-
       const text = ctx.message.text;
-      const user = ctx.from;
+      const tgUser = ctx.from;
+      const user = {
+        id: tgUser.id,
+        username: tgUser.username,
+        first_name: tgUser.first_name,
+        profile_link: tgUser.username
+          ? `https://t.me/${tgUser.username}`
+          : `tg://user?id=${tgUser.id}`,
+      };
       this.logger.log(text);
-      // Проверяем, похоже ли на заказ
       const potential = isPotentialOrder(text);
       if (!potential.ok) return;
-
       await this.sendToModerator(text, user, 'telegram');
     });
 
@@ -55,15 +59,25 @@ export class PitcherService {
       this.vk.updates.on('message_new', async (ctx) => {
         const text = ctx.text || '';
         if (!text) return;
-
-        const user = { first_name: ctx.sender?.first_name || '', username: ctx.sender?.username || '' };
-
+        if (!this.vk) return;
+        const [vkUser] = await this.vk.api.users.get({
+          user_ids: [ctx.senderId],
+          fields: ["screen_name"],
+        });
+        const user = {
+          id: vkUser.id,
+          first_name: vkUser.first_name,
+          last_name: vkUser.last_name,
+          screen_name: vkUser.screen_name,
+          username: vkUser.screen_name,
+          profile_link: vkUser.screen_name
+            ? `https://vk.com/${vkUser.screen_name}`
+            : `https://vk.com/id${vkUser.id}`,
+        };
         const potential = isPotentialOrder(text);
         if (!potential.ok) return;
-
         await this.sendToModerator(text, user, 'vk');
       });
-
       await this.vk.updates.start().catch(err => this.logger.error('🚨 VK updates error', err));
     }
 
@@ -82,12 +96,13 @@ export class PitcherService {
 
 ${text}
 
-👤 Отправитель: ${user.username || user.first_name || 'неизвестно'}
+👤 Отправитель: <a href="${user.profile_link}">
+${user.username || user.first_name || 'неизвестно'}
+</a>
 📦 Источник: ${source}
 
 ⚾⚾⚾⚾⚾⚾⚾⚾⚾⚾
 `;
-
     await this.tgBot.telegram.sendMessage(this.draftChannelId, msg, { parse_mode: 'HTML' });
     this.logger.log(`📤 Сообщение переслано в модераторский канал (${source})`);
   }

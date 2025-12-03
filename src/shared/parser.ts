@@ -45,7 +45,7 @@ export async function parseOrderWithGigaChat(msg: string, gigaKey: string) {
   "budget": number, // оплата на одного человека (только число) (если указано сколько платит за один час и указано сколько часов, нужно посчитать сколько человек получит суммарно)
   "paymentType": "hourly" | "shift", // если указано "за час" — hourly, иначе shift
   "dateType": "date" | "by agreement", // если дата указана — date, если сказано "по договорённости" — by agreement. Если не сказано ничего - date
-  "employer_name": "string", // если есть имя заказчика, иначе "не указано"
+  "employer_name": "string", // ссылка на профиль (https://vk.com/... , https://t.me/... , @username) — вернуть ссылку
   "images": [], // не возвращай ничего всегда
   "type": "string", // если можно определить тип ("грузчики", "уборка", "промоутеры" и т.п.), иначе "другое"
   "applications": [] // не возвращай ничего всегда
@@ -63,7 +63,7 @@ export async function parseOrderWithGigaChat(msg: string, gigaKey: string) {
   "budget": 2500,
   "paymentType": "shift",
   "dateType": "date",
-  "employer_name": "не указано",
+  "employer_name": "https://t.me/isupmop",
   "images": [],
   "type": "грузчики",
   "applications": []

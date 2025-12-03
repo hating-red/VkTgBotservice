@@ -41,39 +41,52 @@ export class BotserviceService {
 <b>🆕 Новый заказ!</b>
 <b>${order.title}</b>
 
-📝 ${order.description}
+📝 ${cleanDescription(order.description)}
 📅 ${formatDate(order.date) || 'не указано'}
 📍 ${order.address || 'не указано'}
 💰 ${order.budget || 'не указано'} ₽
 ⏰ Время: ${timeInfo}
 `;
 
-    message = cleanDescription(message);
+    const mapLink = order.address
+      ? `https://yandex.ru/maps/?text=${encodeURIComponent(order.address)}`
+      : null;
+    const orderLink = `https://nirby.ru/order/${order.orderId}`;
 
-    // --- Telegram ---
-    if (this.tgBot) {
-      for (const chat of this.telegramChatIds) {
-        try {
-          await this.tgBot.telegram.sendMessage(chat, message, { parse_mode: 'HTML' });
-          this.logger.log(`📨 Order sent to Telegram chat ${chat}`);
-        } catch (err) {
-          this.logger.error(`❌ Failed to send order to Telegram chat ${chat}`, err);
-        }
-      }
-    }
+    if (this.vk && this.vkChatIds.length > 0) {
+      let vkMessage = message;
+      if (mapLink) vkMessage += `\n🔗 Посмотреть на карте: ${mapLink}`;
+      vkMessage += `\n🔗 Перейти к заказу: ${orderLink}`;
 
-    // --- VK ---
-    if (this.vk) {
       for (const chat of this.vkChatIds) {
         try {
           await this.vk.api.messages.send({
             peer_id: chat,
-            message,
+            message: vkMessage,
             random_id: Date.now(),
           });
           this.logger.log(`📨 Order sent to VK chat ${chat}`);
         } catch (err) {
           this.logger.error(`❌ Failed to send order to VK chat ${chat}`, err);
+        }
+      }
+    }
+    if (this.tgBot && this.telegramChatIds.length > 0) {
+      const buttons: any[] = [];
+      if (mapLink) buttons.push([{ text: '📍 Посмотреть на карте', url: mapLink }]);
+      buttons.push([{ text: '➡️ Перейти к заказу', url: orderLink }]);
+
+      for (const chat of this.telegramChatIds) {
+        try {
+          await this.tgBot.telegram.sendMessage(chat, message, {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: buttons,
+            },
+          });
+          this.logger.log(`📨 Order sent to Telegram chat ${chat}`);
+        } catch (err) {
+          this.logger.error(`❌ Failed to send order to Telegram chat ${chat}`, err);
         }
       }
     }
