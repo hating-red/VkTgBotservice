@@ -31,6 +31,13 @@ export class BotserviceService {
     }
   }
 
+  private formatForVK(message: string): string {
+  return message
+    .replace(/<b>(.*?)<\/b>/g, '$1')
+    .replace(/<[^>]*>/g, '')
+    .replace('🆕 Новый заказ!', '🆕 НОВЫЙ ЗАКАЗ!');
+}
+
   async sendOrderToChats(order: any) {
     const timeInfo =
       order.startTime && order.hours
@@ -54,7 +61,7 @@ export class BotserviceService {
     const orderLink = `https://nirby.ru/order/${order.orderId}`;
 
     if (this.vk && this.vkChatIds.length > 0) {
-      let vkMessage = message;
+      let vkMessage = this.formatForVK(message);
       if (mapLink) vkMessage += `\n🔗 Посмотреть на карте: ${mapLink}`;
       vkMessage += `\n🔗 Перейти к заказу: ${orderLink}`;
 
