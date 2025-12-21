@@ -40,7 +40,7 @@ export class CatcherService {
 
       const senderMatch = text.match(/👤 Отправитель:\s*(.+)/);
       let sender = senderMatch ? senderMatch[1].trim() : 'не указано';
-      sender = "https://t.me/"+sender;
+      sender = "https://vk.com/"+sender;
       this.logger.log(sender);
 
       let isEditedJSON = false;
