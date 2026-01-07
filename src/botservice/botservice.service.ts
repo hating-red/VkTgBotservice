@@ -32,13 +32,14 @@ export class BotserviceService {
   }
 
   private formatForVK(message: string): string {
-  return message
-    .replace(/<b>(.*?)<\/b>/g, '$1')
-    .replace(/<[^>]*>/g, '')
-    .replace('🆕 Новый заказ!', '🆕 НОВЫЙ ЗАКАЗ!');
-}
+    return message
+      .replace(/<b>(.*?)<\/b>/g, '$1')
+      .replace(/<[^>]*>/g, '')
+      .replace('🆕 Новый заказ!', '🆕 НОВЫЙ ЗАКАЗ!');
+  }
 
   async sendOrderToChats(order: any) {
+    this.logger.log(order.employer_name);
     const timeInfo =
       order.startTime && order.hours
         ? `с ${order.startTime} до ${calculateEndTime(order.startTime, order.hours)} (${order.hours} ч.)`
@@ -62,8 +63,9 @@ export class BotserviceService {
 
     if (this.vk && this.vkChatIds.length > 0) {
       let vkMessage = this.formatForVK(message);
-      if (mapLink) vkMessage += `\n🔗 Посмотреть на карте: ${mapLink}`;
-      vkMessage += `\n🔗 Перейти к заказу: ${orderLink}`;
+      if (mapLink) vkMessage += `\n📍 Посмотреть на карте: ${mapLink}`;
+      // vkMessage += `\n🔗 Перейти к заказу: ${orderLink}`;
+      vkMessage += `\n➡️ Связаться с заказчиком: ${order.employerName}`;
 
       for (const chat of this.vkChatIds) {
         try {
@@ -80,8 +82,9 @@ export class BotserviceService {
     }
     if (this.tgBot && this.telegramChatIds.length > 0) {
       const buttons: any[] = [];
+      // buttons.push([{ text: '➡️ Перейти к заказу', url: orderLink }]);
       if (mapLink) buttons.push([{ text: '📍 Посмотреть на карте', url: mapLink }]);
-      buttons.push([{ text: '➡️ Перейти к заказу', url: orderLink }]);
+      buttons.push([{ text: '➡️ Связаться с заказчиком', url: order.employerName }]);
 
       for (const chat of this.telegramChatIds) {
         try {

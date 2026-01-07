@@ -40,7 +40,20 @@ export class CatcherService {
 
       const senderMatch = text.match(/👤 Отправитель:\s*(.+)/);
       let sender = senderMatch ? senderMatch[1].trim() : 'не указано';
-      sender = "https://t.me/"+sender;
+      
+      const sourceMatch = text.match(/📦 Источник:\s*(.+)/);
+      const source = sourceMatch?.[1];
+
+      if (source === 'vk') {
+        sender = sender.startsWith('http')
+          ? sender
+          : `https://vk.com/${sender}`;
+      } else {
+        sender = sender.startsWith('http')
+          ? sender
+          : `https://t.me/${sender}`;
+      }
+
       this.logger.log(sender);
 
       let isEditedJSON = false;
@@ -57,7 +70,7 @@ export class CatcherService {
 
       if (isEditedJSON) {
         this.pendingEdits[order.orderId] = order;
-        await this.sendToModeratorWithButtons(order.orderId, order, sender);
+        await this.sendToModeratorWithButtons(order.orderId, order);
         this.logger.log(`[CatcherService] channel_post: resent edited orderId=${order.orderId} with buttons`);
         return;
       }
@@ -68,7 +81,6 @@ export class CatcherService {
       try {
         const gigaKey = process.env.GIGACHAT_API_KEY;
 
-        // --- Очистка текста от служебных сообщений ---
         let cleanText = text;
 
         const match = text.match(/📨 <b>Новое объявление \(оригинал\)<\/b>\n([\s\S]*?📦 Источник:.*)/);
@@ -81,11 +93,10 @@ export class CatcherService {
 
         let parsedOrder = await parseOrderWithGigaChat(cleanText, gigaKey!);
         parsedOrder.employer_name = sender;
-
         parsedOrder.isEditing = false;
         this.pendingEdits[orderId] = parsedOrder;
 
-        await this.sendToModeratorWithButtons(orderId, parsedOrder, {sender});
+        await this.sendToModeratorWithButtons(orderId, parsedOrder);
         this.logger.log(`channel_post: sent parsed orderId=${orderId} to moderator with buttons`);
       } catch (err) {
         this.logger.error('❌ Ошибка парсинга заказа в channel_post', err as Error);
@@ -188,7 +199,7 @@ export class CatcherService {
     this.logger.log('🎯 Catcher listening to moderator chat');
   }
 
-  private async sendToModeratorWithButtons(orderId: string, order: any, user: any) {
+  private async sendToModeratorWithButtons(orderId: string, order: any) {
     if (!this.tgBot || !this.modChatId) return;
 
     const msg = `
@@ -205,7 +216,7 @@ export class CatcherService {
         ? `с ${order.startTime} до ${calculateEndTime(order.startTime, order.hours)} (${order.hours} ч.)`
         : order.startTime || 'не указано'}
 
-👤 Отправитель: ${user.sender}
+👤 Отправитель: ${order.employer_name}
 
 🧤🧤🧤🧤🧤🧤🧤🧤🧤🧤
 `;
