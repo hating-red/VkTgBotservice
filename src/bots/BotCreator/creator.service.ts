@@ -5,6 +5,48 @@ import { parseOrderWithGigaChat } from '../../shared/parser';
 import { BotserviceService } from '../../botservice/botservice.service';
 import { calculateEndTime } from '../../shared/time';
 import { cleanDescription } from '../../shared/cleaning';
+import { MongoClient } from 'mongodb';
+import 'dotenv/config';
+
+const mongo = new MongoClient(process.env.MONGO_URL || 'mongodb://127.0.0.1:27017');
+const db = mongo.db('freelance');
+const PROVIDER_TOKEN = process.env.TG_PROVIDER_TOKEN!;
+const balances = db.collection('balances');
+const payments = db.collection('payments');
+const TARIFFS = {
+    "1": { boosts: 1, price: 100 },
+    "10": { boosts: 10, price: 900 },
+    "25": { boosts: 25, price: 2000 },
+    "50": { boosts: 50, price: 3500 },
+} as const;
+
+async function getBoosts(userId: number): Promise<number> {
+    const doc = await balances.findOne({ user_id: userId });
+    if (!doc) {
+        await balances.insertOne({ user_id: userId, boosts: 0 });
+        return 0;
+    }
+    return doc.boosts ?? 0;
+}
+
+async function addBoosts(userId: number, amount: number) {
+    await balances.updateOne(
+        { user_id: userId },
+        { $inc: { boosts: amount } },
+        { upsert: true },
+    );
+}
+
+async function spendBoost(userId: number): Promise<boolean> {
+    const doc = await balances.findOne({ user_id: userId });
+    if (!doc || !doc.boosts || doc.boosts <= 0) return false;
+
+    await balances.updateOne(
+        { user_id: userId },
+        { $inc: { boosts: -1 } },
+    );
+    return true;
+}
 
 type ServiceType = 'site' | 'site+broadcast';
 
@@ -23,6 +65,8 @@ export class CreatorService {
     private startKeyboard() {
         return Markup.inlineKeyboard([
             [Markup.button.callback('➕ Создать новый заказ', 'start_create')],
+            [Markup.button.callback('📦 Баланс бустов', 'check_balance')],
+            [Markup.button.callback('💳 Купить бусты', 'buy_boosts')],
         ]);
     }
 
@@ -32,7 +76,7 @@ export class CreatorService {
     ) {
         const token = process.env.TELEGRAM_CREATOR_TOKEN;
         if (!token) throw new Error('TELEGRAM_CREATOR_TOKEN not set');
-
+        mongo.connect();
         this.bot = new Telegraf(token);
         this.init();
         this.bot.launch();
@@ -69,8 +113,66 @@ export class CreatorService {
             );
         });
 
+        this.bot.action('buy_boosts', async (ctx) => {
+            const kb = Object.entries(TARIFFS).map(([id, t]) => ([
+                Markup.button.callback(
+                    `${t.boosts} бустов — ${t.price} ₽`,
+                    `tariff_${id}`
+                )
+            ]));
+            await ctx.editMessageText(
+                'Выберите пакет бустов:',
+                { reply_markup: { inline_keyboard: kb } }
+            );
+        });
 
-        /** SERVICE SELECT */
+        this.bot.action('check_balance', async (ctx) => {
+            const boosts = await getBoosts(ctx.from.id);
+            await ctx.answerCbQuery();
+            await ctx.editMessageText(
+                `📦 Ваш баланс: <b>${boosts}</b> буст(ов)`,
+                { parse_mode: 'HTML', reply_markup: this.startKeyboard().reply_markup }
+            );
+        });
+
+        this.bot.action(/^tariff_(.+)$/, async (ctx) => {
+            const id = ctx.match[1];
+            const t = TARIFFS[id as keyof typeof TARIFFS];
+            if (!t) return;
+
+            await ctx.answerCbQuery();
+
+            await ctx.replyWithInvoice({
+                provider_token: PROVIDER_TOKEN,
+                title: `Покупка ${t.boosts} бустов`,
+                description: `Пополнение баланса на ${t.boosts} бустов`,
+                currency: 'RUB',
+                prices: [
+                    { label: `${t.boosts} бустов`, amount: t.price * 100 },
+                ],
+                payload: JSON.stringify({
+                    userId: ctx.from.id,
+                    boosts: t.boosts,
+                }),
+            });
+        });
+
+        this.bot.on('pre_checkout_query', async (ctx) => {
+            await ctx.answerPreCheckoutQuery(true);
+        });
+
+        this.bot.on('successful_payment', async (ctx) => {
+            const data = JSON.parse(ctx.message.successful_payment.invoice_payload);
+            await addBoosts(data.userId, data.boosts);
+
+            const boosts = await getBoosts(ctx.from.id);
+
+            await ctx.reply(
+                `🎯 Оплата принята!\n📦 Новый баланс: ${boosts} буст(ов)`,
+                { reply_markup: this.startKeyboard().reply_markup }
+            );
+        });
+
         this.bot.action(['service_site', 'service_broadcast'], async (ctx) => {
             const callback = ctx.callbackQuery as any;
             const data = callback?.data as string;
@@ -139,6 +241,23 @@ export class CreatorService {
 
             try {
                 if (draft.serviceType === 'site+broadcast') {
+
+                    const ok = await spendBoost(ctx.from.id);
+
+                    if (!ok) {
+                        await ctx.reply(
+                            '⚠️ На вашем балансе нет бустов.\n\n' +
+                            '🚀 Чтобы разослать заказ — пополните баланс бустов',
+                            {
+                                reply_markup: {
+                                    inline_keyboard: [[
+                                        Markup.button.callback('💳 Купить бусты', 'buy_boosts'),
+                                    ]]
+                                }
+                            }
+                        );
+                        return;
+                    }
                     let res = await axios.post(`${backendUrl}/order/create-from-bot`, { order });
                     if (!res.data?.success) throw new Error('Backend error');
                 }
@@ -162,19 +281,13 @@ export class CreatorService {
             }
         });
 
-        /** РЕДАКТИРОВАНИЕ */
         this.bot.action('edit', async (ctx) => {
             const draft = this.drafts.get(ctx.from.id);
             if (!draft) return;
-
             draft.step = 'awaiting_text';
-
-            await ctx.editMessageText(
-                '✏️ Отправьте исправленный текст заказа одним сообщением',
-            );
+            await ctx.editMessageText('✏️ Отправьте исправленный текст заказа одним сообщением',);
         });
 
-        /** ОТМЕНА */
         this.bot.action('cancel', async (ctx) => {
             this.drafts.delete(ctx.from.id);
             await ctx.editMessageText(
@@ -184,8 +297,6 @@ export class CreatorService {
                 });
         });
     }
-
-    // ---------- HELPERS ----------
 
     private buildTelegramProfileLink(user: any): string {
         if (user.username) {
